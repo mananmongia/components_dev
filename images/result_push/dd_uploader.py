@@ -35,10 +35,11 @@ def dd_setup():
         if i.endswith('.conf'):
             result_file.remove(i)
 
+    current_time=dt.now()
     date_list=[]
     for i in result_file:
         value=i.split('_')
-        date_list.append(dt(int(value[2]),int(value[1]),int(value[0]),int(value[3]),int(value[4])))
+        date_list.append(dt(int(value[0]),int(current_time.month),int(value[2]),int(value[3]),int(value[4])))
     global latest
     latest=date_list.index(max(date_list))
     latest_pno=result_file[latest].split('-')[0].split('_')[5] 
