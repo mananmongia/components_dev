@@ -40,9 +40,8 @@ def dd_debug():
     config_id=0
 
 def dd_setup():
-    DD_IP = os.environ['dd_ip']
     global DD_URL
-    DD_URL='http://'+DD_IP+':8000'
+    DD_URL=os.environ['dd_url']
 
     global dd_username
     dd_username=os.environ['dd_username']
