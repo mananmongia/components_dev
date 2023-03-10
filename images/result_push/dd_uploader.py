@@ -1,138 +1,158 @@
-import yaml
-import requests
-import json
+import requests, json, os
 from datetime import date
-from datetime import datetime as dt
-import subprocess
 from requests_toolbelt import MultipartEncoder
-from pathlib import Path
-import os
-import glob
+
+
 
 def dd_setup():
     global DD_URL
-    DD_URL=os.environ['dd_url']
-
-    global dd_username
-    dd_username=os.environ['dd_username']
-    
-    global dd_password
-    dd_password=os.environ['dd_password']
+    DD_URL = os.environ["dd_url"]
 
     global DD_TOKEN
-    DD_TOKEN=auth()
+    DD_TOKEN = auth(os.environ["dd_username"], os.environ["dd_password"])
 
     global DD_PRODUCT_NAME
-    DD_PRODUCT_NAME=os.environ['dd_product_name']
+    DD_PRODUCT_NAME = os.environ["dd_product_name"]
 
     global DD_PROD_DESC
-    DD_PROD_DESC=os.environ['dd_product_desc']
-    
+    DD_PROD_DESC = os.environ["dd_product_desc"]
+
     global result_file
-    result_file=os.listdir('/results')
+    result_file = os.listdir("/results")
     for i in result_file:
-        if i.endswith('.conf'):
+        if i.endswith(".conf"):
             result_file.remove(i)
 
-    current_time=dt.now()
-    date_list=[]
-    for i in result_file:
-        value=i.split('_')
-        date_list.append(dt(int(value[0]),int(current_time.month),int(value[2]),int(value[3]),int(value[4])))
-    global latest
-    latest=date_list.index(max(date_list))
-    latest_pno=result_file[latest].split('-')[0].split('_')[5] 
-    
+    global pipeline_no
+    pipeline_no = os.environ["pno"]
+
     global DD_SCANTYPE
-    DD_SCANTYPE=result_file[latest].split('-')[1].split('.')[0]
-    print(DD_SCANTYPE)
+    DD_SCANTYPE = result_file[0].split("-")[1].split(".")[0]
+    print(f'Scan Type: {DD_SCANTYPE}')
 
     global ENG_NAME
-    ENG_NAME='Pipeline No '+latest_pno
-    print(ENG_NAME)
+    ENG_NAME = "Pipeline No " + str(pipeline_no)
+    print(f'ENG_NAME: {ENG_NAME}')
 
-def auth():
-    creds={
-        'username' : dd_username,
-        'password' : dd_password
-    }
-    r = requests.post(DD_URL+'/api/v2/api-token-auth/',
-    data=json.dumps(creds),headers={'Content-Type': 'application/json'} )
-    return r.content.decode('UTF-8').split('"')[3]
+
+def auth(dd_username, dd_password):
+    # Returns Authentication Token
+    r = requests.post(
+        DD_URL + "/api/v2/api-token-auth/",
+        data=json.dumps({"username": dd_username, "password": dd_password}),
+        headers={"Content-Type": "application/json"},
+    ) 
+    print(f'Auth Token Generated: {r}')
+    return r.content.decode("UTF-8").split('"')[3]
+
 
 def get_prod_id():
-    r=requests.get(DD_URL+'/api/v2/products', headers={'Authorization': 'Token '+DD_TOKEN})
-    for i in r.json()['results']:
-        if i['name']==DD_PRODUCT_NAME:
-            return i['id']
+    # Get Product ID of exixting product
+    r = requests.get(
+        DD_URL + "/api/v2/products", headers={"Authorization": "Token " + DD_TOKEN}
+    )
+    for product in r.json()["results"]:
+        if product["name"] == DD_PRODUCT_NAME:
+            print(f'Product Exists on DefectDojo: {r}')
+            return product["id"]
     return None
 
+
 def get_eng_id():
-    r=requests.get(DD_URL+'/api/v2/engagements', headers={'Authorization': 'Token '+DD_TOKEN})
-    for i in r.json()['results']:
-        print(i)
-        if i['name']==ENG_NAME:
-            return i['id']
+    r = requests.get(
+        DD_URL + "/api/v2/engagements", headers={"Authorization": "Token " + DD_TOKEN}
+    )
+    for eng in r.json()["results"]:
+        if eng["name"] == ENG_NAME:
+            print(f'Engagement Exists inside product on DefectDojo: {r}')
+            global ENG_ID
+            ENG_ID = str(eng["id"])
+            #Update global variable for eng_ip
+            return eng["id"]
     return None
 
 
 def create_prod():
-    today = date.today()
-    t_date=today.strftime('%Y-%m-%d')
-    fields={
-    'name': DD_PRODUCT_NAME,
-    'product_name': DD_PRODUCT_NAME,
-    'prod_type':'1',
-    'description': DD_PROD_DESC
+    fields = {
+        "name": DD_PRODUCT_NAME,
+        "product_name": DD_PRODUCT_NAME,
+        "prod_type": "1",
+        "description": DD_PROD_DESC,
     }
-    r = requests.post(DD_URL+'/api/v2/products/',
-    data=json.dumps(fields),headers={'Content-Type': 'application/json',
-    'Authorization': 'Token '+DD_TOKEN} )
-    return r.json()['id']
+    r = requests.post(
+        DD_URL + "/api/v2/products/",
+        data=json.dumps(fields),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Token " + DD_TOKEN,
+        },
+    )
+    print(f'Product Created in DefectDojo: {r}')
 
-def create_eng():
+    return r.json()["id"]
+
+
+def create_eng_type():
     today = date.today()
-    t_date=today.strftime('%Y-%m-%d')
-    fields={
-    'name': ENG_NAME,
-    'product':str(get_prod_id()),
-    'engagement_type':'CI/CD',
-    'target_start': str(t_date),
-    'prod_type':'1',
-    'target_end': str(t_date),
-    'description': 'Pipeline no: ' + ENG_NAME + ' Scans'
-    }
-    r = requests.post(DD_URL+'/api/v2/engagements/',
-    data=json.dumps(fields),headers={'Content-Type': 'application/json',
-    'Authorization': 'Token '+DD_TOKEN} )
+    t_date = today.strftime("%Y-%m-%d")
+    r = requests.post(
+        DD_URL + "/api/v2/engagements/",
+        data=json.dumps(
+            {
+                "name": ENG_NAME,
+                "product": str(get_prod_id()),
+                "engagement_type": "CI/CD",
+                "target_start": str(t_date),
+                "prod_type": "1",
+                "target_end": str(t_date),
+                "description": "Pipeline no: " + ENG_NAME + " Scans",
+            }
+        ),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Token " + DD_TOKEN,
+        },
+    )
 
 
 def upload_scan():
-    
+
     mp_encoder = MultipartEncoder(
-    fields={
-        'scan_type': DD_SCANTYPE,
-        'product_name':DD_PRODUCT_NAME,
-        'engagement_name': ENG_NAME,
-        'name': ENG_NAME,
-        'engagement': str(get_eng_id()),
-        'file':(result_file[latest], open('/results/'+result_file[latest], 'rb'), 'application/json')
+        fields={
+            "scan_type": DD_SCANTYPE,
+            "product_name": DD_PRODUCT_NAME,
+            "engagement_name": ENG_NAME,
+            "name": ENG_NAME,
+            "engagement": ENG_ID,
+            "file": (
+                result_file[0],
+                open("/results/" + result_file[0], "rb"),
+                "application/json",
+            ),
         }
     )
-    r = requests.post(DD_URL+'/api/v2/import-scan/',
-        data=mp_encoder,headers={'Content-Type': mp_encoder.content_type,
-        'Authorization': 'Token '+DD_TOKEN} )
+    r = requests.post(
+        DD_URL + "/api/v2/import-scan/",
+        data=mp_encoder,
+        headers={
+            "Content-Type": mp_encoder.content_type,
+            "Authorization": "Token " + DD_TOKEN,
+        },
+    )
+    print(f'Results pushed?: {r}')
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     dd_setup()
-    if(get_prod_id()):
-        if(get_eng_id()):
-            print('Exists')
+    if get_prod_id():
+        if get_eng_id():
+            print("Product and Engagement Exists in DefectDojo\nUploading Scan Report")
             upload_scan()
         else:
-            create_eng()
+            create_eng_type() 
             upload_scan()
     else:
         create_prod()
-        create_eng()
+        create_eng_type() 
         upload_scan()
+
